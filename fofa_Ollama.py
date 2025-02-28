@@ -30,7 +30,8 @@ import requests
 import argparse
 import os
 
-fofa_key = "" # fofa_key
+
+fofa_key = "" # fofa_key 需要配置这个key!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 class Colorpr:
