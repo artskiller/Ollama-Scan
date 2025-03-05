@@ -24,18 +24,21 @@ FOFA 查询与导出工具
 Github:https://github.com/RuoJi6
 版本: 1.0
 """
-import base64
-from datetime import datetime
-import requests
+
 import argparse
+import base64
+import csv
 import os
+from datetime import datetime
+
+import httpx
 import urllib3
 
 # 禁用 InsecureRequestWarning 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-fofa_key = "" # fofa_key 需要配置这个key!!!!!!!!!!!!!!!!!!!!!!!!!
+fofa_key = ""  # fofa_key 需要配置这个key!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 class Colorpr:
@@ -63,6 +66,7 @@ class Colorpr:
     def color_purple(test):
         return f"\033[35m{test}\033[0m"
 
+
 def formatted_time():
     """
     功能描述: 返回系统当前时间 time:2024-12-07 19:15:31
@@ -77,7 +81,17 @@ def formatted_time():
     # 定义时间格式
     time_format = "%Y-%m-%d %H:%M:%S"
     # 按照定义的格式对当前时间进行格式化
-    return str(now.strftime(time_format)).replace('http://', '').replace('https://', '').replace('/', '').replace('.', '_').replace(':','_').replace('-', '_').replace(' ', '_')
+    return (
+        str(now.strftime(time_format))
+        .replace("http://", "")
+        .replace("https://", "")
+        .replace("/", "")
+        .replace(".", "_")
+        .replace(":", "_")
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
 
 def get_base64(value_b64encode=None, value_b64decode=None):
     """
@@ -92,60 +106,88 @@ def get_base64(value_b64encode=None, value_b64decode=None):
     """
     if value_b64encode is not None:
         # 进行Base64编码
-        return base64.b64encode(value_b64encode.encode('utf-8')).decode('utf-8')
+        return base64.b64encode(value_b64encode.encode("utf-8")).decode("utf-8")
     elif value_b64decode is not None:
         # 进行Base64解密
-        return base64.b64decode(value_b64decode).decode('utf-8')
+        return base64.b64decode(value_b64decode).decode("utf-8")
 
 
-def fofa_query(query,number):
+def fofa_query(query, number):
     number = int(number)
     value_list = 0
     data_list = []
-    fofa_user_info = requests.get(f'https://fofa.info/api/v1/info/my?key={fofa_key}')
-    if fofa_user_info.json()['error'] is not True:
-        i = 1
-        while True:
-            qbase64 = get_base64(query)
-            data = requests.get(
-                f"https://fofa.info/api/v1/search/all?&key={fofa_key}&qbase64={qbase64}&fields=link&page={i}&size={number}")
 
-            if data.json()['error'] is not True:
-                i = i + 1
-                value_list = value_list + len(data.json()['results'])
-                data_list.extend(data.json()['results'])
-            else:
-                print(f"[{Colorpr.color_blue('-')}]FOFA ERROR:" + data.json()["errmsg"])
-                break
-            print(f"[{Colorpr.color_red('+')}]导出fofa条数:{value_list}")
-            if value_list >= number:
-                break
-        return data_list
-    else:
-        print(f"[{Colorpr.color_blue('-')}]FOFA ERROR:" + fofa_user_info.json()["errmsg"])
-        if fofa_user_info.json()["errmsg"] == '[-700] 账号无效':
-            print(f"[{Colorpr.color_blue('-')}]配置FOFA KEY")
-        exit(0)
+    # 使用httpx客户端，设置默认验证为False
+    with httpx.Client(verify=False) as client:
+        fofa_user_info = client.get(f"https://fofa.info/api/v1/info/my?key={fofa_key}")
+        if fofa_user_info.json()["error"] is not True:
+            i = 1
+            while True:
+                qbase64 = get_base64(query)
+                data = client.get(f"https://fofa.info/api/v1/search/all?&key={fofa_key}&qbase64={qbase64}&fields=link&page={i}&size={number}")
+
+                if data.json()["error"] is not True:
+                    i = i + 1
+                    value_list = value_list + len(data.json()["results"])
+                    data_list.extend(data.json()["results"])
+                else:
+                    print(f"[{Colorpr.color_blue('-')}]FOFA ERROR:" + data.json()["errmsg"])
+                    break
+                print(f"[{Colorpr.color_red('+')}]导出fofa条数:{value_list}")
+                if value_list >= number:
+                    break
+            return data_list
+        else:
+            print(f"[{Colorpr.color_blue('-')}]FOFA ERROR:" + fofa_user_info.json()["errmsg"])
+            if fofa_user_info.json()["errmsg"] == "[-700] 账号无效":
+                print(f"[{Colorpr.color_blue('-')}]配置FOFA KEY")
+            exit(0)
 
 
 def fofa_check(fofa_data):
-    file_time_name = formatted_time()+".txt"
-    for url in fofa_data:
-        try:
-            fofa_url_data = requests.get(url=url + "/api/tags", timeout=30, verify=False)
-            fofa_url_data_json = fofa_url_data.json()
-            if len(fofa_url_data_json['models']):
-                print(f"[{Colorpr.color_red('+')}]Ollama: "+ url + " 模型数量：" +str(len(fofa_url_data_json['models'])))
-                with open(file_time_name, "a") as fOllama:
-                    fOllama.write(url + '\n')
-                    for models in fofa_url_data_json['models']:
-                        fOllama.write(str(models)+ '\n')
-                    fOllama.write("---------------------------------------\n\n")
-        except Exception as e:
-            print(f"[{Colorpr.color_blue('-')}]不存在:" + str(e))
-    if os.path.exists(file_time_name): print(f"[{Colorpr.color_red('+')}]保存为：{file_time_name}")
+    file_time_name = formatted_time() + ".txt"
+    csv_file_name = formatted_time() + ".csv"
 
-if __name__ == '__main__':
+    # 创建CSV文件并写入表头
+    with open(csv_file_name, "a", newline="") as fcsv:
+        csv_writer = csv.writer(fcsv)
+        csv_writer.writerow(["IP", "URL", "模型名称"])
+
+    # 使用httpx客户端，设置默认超时和验证为False
+    with httpx.Client(timeout=30, verify=False) as client:
+        for url in fofa_data:
+            try:
+                fofa_url_data = client.get(url=url + "/api/tags")
+                fofa_url_data_json = fofa_url_data.json()
+                if len(fofa_url_data_json["models"]):
+                    # 从URL中提取IP
+                    ip = url.replace("http://", "").replace("https://", "").split(":")[0]
+
+                    print(f"[{Colorpr.color_red('+')}]Ollama: " + url + " 模型数量：" + str(len(fofa_url_data_json["models"])))
+
+                    # 写入TXT文件
+                    with open(file_time_name, "a") as fOllama:
+                        fOllama.write(url + "\n")
+                        for models in fofa_url_data_json["models"]:
+                            fOllama.write(str(models) + "\n")
+                        fOllama.write("---------------------------------------\n\n")
+
+                    # 写入CSV文件
+                    with open(csv_file_name, "a", newline="") as fcsv:
+                        csv_writer = csv.writer(fcsv)
+                        for model in fofa_url_data_json["models"]:
+                            csv_writer.writerow([ip, url, model["name"]])
+
+            except Exception as e:
+                print(f"[{Colorpr.color_blue('-')}]不存在:" + str(e))
+
+    if os.path.exists(file_time_name):
+        print(f"[{Colorpr.color_red('+')}]TXT文件保存为：{file_time_name}")
+    if os.path.exists(csv_file_name):
+        print(f"[{Colorpr.color_red('+')}]CSV文件保存为：{csv_file_name}")
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FOFA导出")
     parser.add_argument(
         "-q",
@@ -165,7 +207,7 @@ if __name__ == '__main__':
     if args.query:
         if os.path.exists("fofa_link.txt"):
             os.remove("fofa_link.txt")
-        print(f"[{Colorpr.color_red('+')}]语法:"+args.query)
+        print(f"[{Colorpr.color_red('+')}]语法:" + args.query)
         print(f"[{Colorpr.color_red('+')}]条数:" + str(args.number))
-        fofa_data_list = fofa_query(args.query,args.number)
+        fofa_data_list = fofa_query(args.query, args.number)
         fofa_check(fofa_data_list)

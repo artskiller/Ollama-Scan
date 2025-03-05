@@ -1,3 +1,4 @@
 ollama
 prompt_toolkit
 rich
+urllib3
